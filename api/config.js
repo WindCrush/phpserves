@@ -1,5 +1,37 @@
 import { getStoredUrl, isStorageConfigured } from "./_storage.js";
 
+function hasAttributionData(body) {
+  const keys = [
+    "af_status",
+    "af_id",
+    "media_source",
+    "pid",
+    "campaign",
+    "campaign_id",
+    "deep_link_value",
+    "deep_link_sub1",
+    "af_sub1",
+    "af_sub2",
+    "af_sub3",
+    "af_sub4",
+    "af_adset",
+    "af_ad",
+    "click_time",
+    "install_time",
+    "is_retargeting",
+  ];
+
+  return keys.some((key) => {
+    const value = body[key];
+
+    if (typeof value === "string") {
+      return value.trim() !== "";
+    }
+
+    return value !== undefined && value !== null;
+  });
+}
+
 function appendQuery(url, params) {
   const parsed = new URL(url);
 
@@ -21,6 +53,15 @@ export default async function handler(request, response) {
   }
 
   try {
+    if (!hasAttributionData(body)) {
+      response.status(200).json({
+        ok: false,
+        message: "No data",
+        storage_configured: isStorageConfigured(),
+      });
+      return;
+    }
+
     const baseUrl = await getStoredUrl();
     const url = appendQuery(baseUrl, {
       sub_id_1: body.af_sub1 || body.deep_link_sub1 || "",

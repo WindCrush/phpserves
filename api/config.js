@@ -1,35 +1,8 @@
 import { getStoredUrl, isStorageConfigured } from "./_storage.js";
 
 function hasAttributionData(body) {
-  const keys = [
-    "af_status",
-    "af_id",
-    "media_source",
-    "pid",
-    "campaign",
-    "campaign_id",
-    "deep_link_value",
-    "deep_link_sub1",
-    "af_sub1",
-    "af_sub2",
-    "af_sub3",
-    "af_sub4",
-    "af_adset",
-    "af_ad",
-    "click_time",
-    "install_time",
-    "is_retargeting",
-  ];
-
-  return keys.some((key) => {
-    const value = body[key];
-
-    if (typeof value === "string") {
-      return value.trim() !== "";
-    }
-
-    return value !== undefined && value !== null;
-  });
+  const status = String(body.af_status || "").trim().toLowerCase();
+  return status === "non-organic" || status === "non organic";
 }
 
 function appendQuery(url, params) {

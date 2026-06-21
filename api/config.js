@@ -15,23 +15,32 @@ function appendQuery(url, params) {
   return parsed.toString();
 }
 
+function mask(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const string = String(value);
+  return string.length <= 10 ? string : `${string.slice(0, 6)}...${string.slice(-4)}`;
+}
+
 function payloadSummary(body) {
   return {
     af_status: body.af_status ?? null,
-    af_id: body.af_id ?? null,
+    af_id: mask(body.af_id),
     campaign: body.campaign ?? body.c ?? null,
     campaign_id: body.campaign_id ?? body.af_c_id ?? null,
     media_source: body.media_source ?? body.pid ?? null,
     af_channel: body.af_channel ?? body.channel ?? null,
     af_adset: body.af_adset ?? body.adset ?? null,
     af_ad: body.af_ad ?? body.ad ?? null,
-    af_sub1: body.af_sub1 ?? body.deep_link_sub1 ?? null,
-    af_sub2: body.af_sub2 ?? body.deep_link_sub2 ?? null,
-    af_sub3: body.af_sub3 ?? body.deep_link_sub3 ?? null,
-    af_sub4: body.af_sub4 ?? body.deep_link_sub4 ?? null,
-    af_sub5: body.af_sub5 ?? body.deep_link_sub5 ?? null,
-    push_token: body.push_token ?? null,
-    apns_token: body.apns_token ?? null,
+    af_sub1: mask(body.af_sub1 ?? body.deep_link_sub1),
+    af_sub2: mask(body.af_sub2 ?? body.deep_link_sub2),
+    af_sub3: mask(body.af_sub3 ?? body.deep_link_sub3),
+    af_sub4: mask(body.af_sub4 ?? body.deep_link_sub4),
+    af_sub5: mask(body.af_sub5 ?? body.deep_link_sub5),
+    has_push_token: Boolean(body.push_token),
+    has_apns_token: Boolean(body.apns_token),
     firebase_project_id: body.firebase_project_id ?? null,
     bundle_id: body.bundle_id ?? null,
     os: body.os ?? null,
@@ -40,24 +49,21 @@ function payloadSummary(body) {
   };
 }
 
-function requestSource(request) {
-  return {
-    method: request.method,
-    user_agent: request.headers["user-agent"] || null,
-    forwarded_for: request.headers["x-forwarded-for"] || null,
-  };
-}
-
-async function recordHistory(request, body, decision, responseBody) {
+async function recordHistory(body, decision, responseBody) {
   try {
     await saveRequestHistory({
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       timestamp: new Date().toISOString(),
       decision,
       summary: payloadSummary(body),
-      request: requestSource(request),
-      payload: body,
-      response: responseBody,
+      response: {
+        ok: responseBody.ok,
+        message: responseBody.message ?? null,
+        error: responseBody.error ?? null,
+        base_url: responseBody.base_url ?? null,
+        storage_configured: responseBody.storage_configured ?? isStorageConfigured(),
+        expires: responseBody.expires ?? null,
+      },
     });
   } catch (error) {
     console.error("history save failed", error);
@@ -82,10 +88,10 @@ export default async function handler(request, response) {
         storage_configured: isStorageConfigured(),
       };
 
-      await recordHistory(request, body, {
+      await recordHistory(body, {
         status: "no_data",
         reason: "Missing af_status Non-organic",
-        returned_url: null,
+        returned_base_url: null,
       }, responseBody);
 
       response.status(200).json(responseBody);
@@ -113,10 +119,10 @@ export default async function handler(request, response) {
       expires: Math.floor(Date.now() / 1000) + 86400,
     };
 
-    await recordHistory(request, body, {
+    await recordHistory(body, {
       status: "url_returned",
       reason: "af_status is Non-organic",
-      returned_url: url,
+      returned_base_url: baseUrl,
       base_url: baseUrl,
     }, responseBody);
 
@@ -127,10 +133,10 @@ export default async function handler(request, response) {
       error: error.message,
     };
 
-    await recordHistory(request, body, {
+    await recordHistory(body, {
       status: "error",
       reason: error.message,
-      returned_url: null,
+      returned_base_url: null,
     }, responseBody);
 
     response.status(500).json(responseBody);

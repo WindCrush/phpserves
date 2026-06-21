@@ -5,27 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Polus Config</title>
   <style>
+    * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: #10131a;
       color: #f5f7fb;
-      display: grid;
-      place-items: center;
+      padding: 28px 16px;
     }
     main {
-      width: min(760px, calc(100vw - 32px));
+      width: min(1080px, 100%);
+      margin: 0 auto;
       background: #181d27;
       border: 1px solid #293142;
       border-radius: 10px;
       padding: 24px;
       box-shadow: 0 20px 60px rgba(0, 0, 0, .35);
     }
-    h1 {
-      margin: 0 0 18px;
-      font-size: 24px;
-    }
+    h1 { margin: 0 0 18px; font-size: 24px; }
+    h2 { margin: 30px 0 8px; font-size: 18px; }
     label {
       display: block;
       margin: 18px 0 8px;
@@ -33,7 +32,6 @@
       font-size: 14px;
     }
     input {
-      box-sizing: border-box;
       width: 100%;
       padding: 13px 14px;
       border: 1px solid #3a455c;
@@ -52,6 +50,7 @@
       font-weight: 700;
       cursor: pointer;
     }
+    button.secondary { background: #293142; color: #dbe2f5; }
     code, pre {
       display: block;
       overflow-wrap: anywhere;
@@ -61,16 +60,71 @@
       background: #0f131b;
       color: #cbd4ff;
     }
-    .row {
-      margin-top: 18px;
+    pre { max-height: 420px; overflow: auto; }
+    .row { margin-top: 18px; }
+    .status { min-height: 20px; margin-top: 12px; color: #93f0b6; }
+    .error { color: #ff9b9b; }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
     }
-    .status {
-      min-height: 20px;
-      margin-top: 12px;
-      color: #93f0b6;
+    .toolbar button { margin-top: 0; }
+    .history { display: grid; gap: 10px; margin-top: 12px; }
+    .history-item {
+      width: 100%;
+      text-align: left;
+      padding: 12px;
+      border: 1px solid #303a4f;
+      border-radius: 8px;
+      background: #111722;
+      color: #edf2ff;
+      cursor: pointer;
     }
-    .error {
-      color: #ff9b9b;
+    .history-item:hover { border-color: #6d7dff; }
+    .history-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .pill {
+      display: inline-flex;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .pill.ok { background: rgba(71, 211, 126, .16); color: #8df2b4; }
+    .pill.no { background: rgba(255, 197, 92, .16); color: #ffd58a; }
+    .pill.err { background: rgba(255, 105, 105, .16); color: #ffaaa6; }
+    .muted { color: #9ba8c4; }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .summary div {
+      min-width: 0;
+      padding: 8px;
+      border-radius: 8px;
+      background: #0f131b;
+      overflow-wrap: anywhere;
+    }
+    .summary strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #8d99b7;
+      font-size: 12px;
+    }
+    @media (max-width: 760px) {
+      main { padding: 18px; }
+      .summary { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -94,6 +148,22 @@
     <label>Current config response</label>
     <pre id="preview">Loading...</pre>
   </div>
+
+  <section>
+    <div class="toolbar">
+      <h2>Last app config requests</h2>
+      <div>
+        <button class="secondary" id="refresh-history" type="button">Refresh</button>
+        <button class="secondary" id="clear-history" type="button">Clear history</button>
+      </div>
+    </div>
+    <div id="history" class="history">Loading...</div>
+  </section>
+
+  <section>
+    <h2>Selected request details</h2>
+    <pre id="details">Click a request to inspect masked summary and response.</pre>
+  </section>
 </main>
 
 <script>
@@ -101,9 +171,26 @@
   const input = document.querySelector("#url");
   const statusEl = document.querySelector("#status");
   const preview = document.querySelector("#preview");
+  const historyEl = document.querySelector("#history");
+  const detailsEl = document.querySelector("#details");
   const configUrl = `${location.origin}/api/config`;
 
   document.querySelector("#config-url").textContent = configUrl;
+
+  function safeText(value) {
+    if (value === null || value === undefined || value === "") return "-";
+    return String(value);
+  }
+
+  function formatDate(value) {
+    return value ? new Date(value).toLocaleString() : "unknown time";
+  }
+
+  function statusClass(status) {
+    if (status === "url_returned") return "ok";
+    if (status === "error") return "err";
+    return "no";
+  }
 
   async function loadCurrent() {
     statusEl.textContent = "";
@@ -113,9 +200,14 @@
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify({
+        af_status: "Non-organic",
         af_id: "panel-preview-af-id",
         push_token: "panel-preview-push-token",
-        media_source: "panel"
+        media_source: "panel",
+        campaign: "panel-preview",
+        store_id: "id6770539278",
+        os: "iOS",
+        locale: "panel"
       })
     });
 
@@ -124,6 +216,47 @@
 
     if (data.base_url) {
       input.value = data.base_url;
+    }
+  }
+
+  async function loadHistory() {
+    const response = await fetch("/api/history", { headers: { "Accept": "application/json" } });
+    const data = await response.json();
+
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "History failed");
+    }
+
+    historyEl.innerHTML = "";
+
+    if (!data.history.length) {
+      historyEl.textContent = "No requests yet.";
+      return;
+    }
+
+    for (const item of data.history) {
+      const summary = item.summary || {};
+      const decision = item.decision || {};
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "history-item";
+      button.innerHTML = `
+        <div class="history-top">
+          <span>${formatDate(item.timestamp)}</span>
+          <span class="pill ${statusClass(decision.status)}">${safeText(decision.status)}</span>
+        </div>
+        <div class="muted">${safeText(decision.reason)}</div>
+        <div class="summary">
+          <div><strong>af_status</strong>${safeText(summary.af_status)}</div>
+          <div><strong>af_id</strong>${safeText(summary.af_id)}</div>
+          <div><strong>media_source</strong>${safeText(summary.media_source)}</div>
+          <div><strong>returned base</strong>${safeText(decision.returned_base_url || decision.base_url)}</div>
+        </div>
+      `;
+      button.addEventListener("click", () => {
+        detailsEl.textContent = JSON.stringify(item, null, 2);
+      });
+      historyEl.appendChild(button);
     }
   }
 
@@ -147,13 +280,24 @@
 
       statusEl.textContent = "Saved.";
       await loadCurrent();
+      await loadHistory();
     } catch (error) {
       statusEl.textContent = error.message;
       statusEl.classList.add("error");
     }
   });
 
-  loadCurrent().catch((error) => {
+  document.querySelector("#refresh-history").addEventListener("click", () => {
+    loadHistory().catch((error) => { historyEl.textContent = error.message; });
+  });
+
+  document.querySelector("#clear-history").addEventListener("click", async () => {
+    await fetch("/api/history", { method: "DELETE" });
+    detailsEl.textContent = "Click a request to inspect masked summary and response.";
+    await loadHistory();
+  });
+
+  Promise.all([loadCurrent(), loadHistory()]).catch((error) => {
     preview.textContent = error.message;
     statusEl.textContent = error.message;
     statusEl.classList.add("error");
@@ -161,4 +305,3 @@
 </script>
 </body>
 </html>
-
